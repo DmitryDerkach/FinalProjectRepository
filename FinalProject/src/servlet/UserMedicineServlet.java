@@ -29,12 +29,33 @@ public class UserMedicineServlet extends HttpServlet{
 	@Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String[] parameterValues = req.getParameterValues("medicineId");
-        String[] quantity =  req.getParameterValues("quantity");
         List<MedicineDto> medicineDtoContainer = new ArrayList<>();
         for (String s : parameterValues) {
         	medicineDtoContainer.add(medicineService.findbyId(Integer.parseInt(s)));
         }
+        
+        String[] arrayQuantity =  req.getParameterValues("quantity");
+        ArrayList<String> quantity = new ArrayList<>();
+        for (String s : arrayQuantity) {
+            if (!s.equals("0")) {
+                quantity.add(s);
+            }
+        }
+        
+        ArrayList<Integer> totalPriceEachMedicine = new ArrayList<>();
+        for (int i = 0; i < quantity.size(); i++) {
+        	totalPriceEachMedicine.add(Integer.parseInt(quantity.get(i))  * medicineDtoContainer.get(i).getPrice());
+        }
+        
+        int totalPrice = 0;
+        for (int i = 0; i < totalPriceEachMedicine.size(); i++) {
+        	totalPrice += totalPriceEachMedicine.get(i);
+        }
+        
         req.getSession().setAttribute("medicines", medicineDtoContainer);
+        req.getSession().setAttribute("quantity", quantity);
+        req.getSession().setAttribute("totalPrice", totalPrice);
+        req.getSession().setAttribute("totalPriceEachMedicine", totalPriceEachMedicine);
 		req.getRequestDispatcher(JspHelper.getPath("user-medicine-cart")).forward(req, resp);
     }
 

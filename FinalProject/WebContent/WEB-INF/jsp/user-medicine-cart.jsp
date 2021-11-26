@@ -5,13 +5,23 @@
     <title>Cart</title>
 </head>
 <body>
-<form action="${pageContext.request.contextPath}/cart-servlet" method="post">
-    <c:forEach var="medicine" items="${sessionScope.medicines}">
-        <p>${medicine.name} ${medicine.price} ${medicine.countryOfProduction} 
-            <input type="number" name="quantity" placeholder="количество" value="1">
-            <input type="hidden" name="id"  value=${medicine.id}> </p>
+<%@ include file="header.jsp"%>
+<form action="${pageContext.request.contextPath}/final-servlet" method="post">
+    <c:forEach var="index" begin="0" end="${sessionScope.medicines.size()-1}">
+     <h3><label>
+            ${sessionScope.medicines.get(index).name}
+                (${sessionScope.medicines.get(index).countryOfProduction}) -
+                    ${sessionScope.medicines.get(index).price} USD:
+                ${sessionScope.quantity[index]} items
+                <br>
+                Total price for this medicine: ${sessionScope.totalPriceEachMedicine.get(index)} USD
+    </label></h3>
     </c:forEach>
-    <button type="submit">Подтвердить покупку</button>
+    	<h3>
+        Total price: ${sessionScope.totalPrice}
+        </h3>
+    <button type="submit" name="submitReject" value="1">Отменить покупку</button>
+    <button type="submit" name="submitReject" value="2">Подтвердить покупку</button>
 </form>
 </body>
 </html>

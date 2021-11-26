@@ -5,13 +5,14 @@
     <title>Login</title>
 </head>
 <body>
+<%@ include file="header.jsp"%>
 <form action="${pageContext.request.contextPath}/login" method="post">
-    <label for="emailId">Email
+    <label for="emailId">Email:
         <input type="text" name="eMail" id="emailId">
     </label>
     <br>
     <br>
-    <label for="passwordId">Password
+    <label for="passwordId">Password:
         <input type="password" name="password" id="passwordId">
     </label>
     <br>
