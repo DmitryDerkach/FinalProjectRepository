@@ -32,7 +32,7 @@ public class MedicineService {
         if (delete) {
             return "Succsessfuly deleted";
         } else {
-            return "Wasn't deleted";
+            return "Was not deleted";
         }
     }
 
@@ -43,7 +43,7 @@ public class MedicineService {
 		if (result != null) {
 			responce = "Saved";
 		} else {
-			responce = "Non saved";
+			responce = "Not saved";
 		}
 		return responce;
 		

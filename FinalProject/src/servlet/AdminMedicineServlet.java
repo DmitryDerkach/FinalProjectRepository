@@ -33,9 +33,7 @@ public class AdminMedicineServlet extends HttpServlet {
 					.price(Integer.parseInt(req.getParameter("price")))
 					.build();
 				String result = medicineService.save(medicineDto);
-				req.setAttribute("result", result);
-				//doGet(req, resp);
-				//req.getRequestDispatcher(JspHelper.getPath("admin-medicines")).forward(req, resp);
+				req.getSession().setAttribute("result", result);
 				req.getSession().setAttribute("medicines", medicineService.findAll());
 				req.getRequestDispatcher(JspHelper.getPath("admin-medicines")).forward(req, resp);
 		} else {
@@ -45,18 +43,11 @@ public class AdminMedicineServlet extends HttpServlet {
 					.countryOfProduction(req.getParameter("country"))
 					.price(Integer.parseInt(req.getParameter("price")))
 					.build();
-			try { 	
-				 String result = medicineService.delete(medicineDto);
-				 resp.setContentType("text/html");
-				 try(PrintWriter output = resp.getWriter()) { 
-					 output.write("<p>" + result + "</p>");
-				 }
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		}
+			String result = medicineService.delete(medicineDto);
+			req.getSession().setAttribute("result", result);
+			req.getSession().setAttribute("medicines", medicineService.findAll());
+			req.getRequestDispatcher(JspHelper.getPath("admin-medicines")).forward(req, resp);
 
-				
+		}	
 	}
-
 }

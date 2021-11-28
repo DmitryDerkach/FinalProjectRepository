@@ -1,24 +1,23 @@
-<%@ page language="java" contentType="text/html; charset=UTF-8"
-    pageEncoding="UTF-8"%>
+<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
 <%@taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
-<!DOCTYPE html>
+<%@taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Insert title here</title>
+    <title>Users list:</title>
 </head>
 <body>
-<form action="/admin-users" method="post">
-    <c:forEach var="users" items="${requestScope.users}">
-        <fieldset>
-            <h3>${users.id} ${users.name} ${users.email} ${users.role}</h3>
-            <input type="hidden" name="id" value="${users.id}"/>
-            <input type="hidden" name="name" value="${users.name}"/>
-            <input type="hidden" name="email" value="${users.email}"/>
-            <input type="hidden" name="role" value="${users.role}"/>
-        </fieldset>
+<%@ include file="header.jsp"%>
+<h3><fmt:message key="users.db.list" /></h3>
+<form action="${pageContext.request.contextPath}/admin-users" method="post">
+    <c:forEach var="user" items="${requestScope.users}">
+        <h3>
+            Id:${user.id}, ${user.name} - [${user.email}] - ${user.role}
+            <input type="hidden" name="id" value="${user.id}"/>
+            <input type="hidden" name="name" value="${user.name}"/>
+            <input type="hidden" name="email" value="${user.email}"/>
+            <input type="hidden" name="role" value="${user.role}"/>
+        </h3>
     </c:forEach>
 </form>
-
 </body>
 </html>
