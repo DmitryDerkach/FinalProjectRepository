@@ -1,0 +1,50 @@
+# 2026: the "one button" for the pharmacy (./run.sh web): PostgreSQL with pharmacy_database + Tomcat 9.
+# In 2021 the project ran on Tomcat 8.5 from Eclipse against a local PostgreSQL. Tomcat 8.5 is end-of-life; Tomcat 9 is
+# the newest line with the same javax.servlet API (Tomcat 10+ renamed it to jakarta.servlet and would not load the app).
+name: pharmacy
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pharmacy_database
+    # 5435: 5432 is often taken by a local PostgreSQL (5433 and 5434 by the JDBC and MVC repositories' containers)
+    ports:
+      - "${DB_PORT:-5435}:5432"
+    volumes:
+      # on the first start PostgreSQL runs 01_schema.sql and 02_data.sql; ./run.sh runs them again before every run
+      - ./FinalProject/db:/docker-entrypoint-initdb.d:ro
+    # every SQL statement goes to the container log, prefixed with the client's name ("PostgreSQL JDBC Driver" for
+    # the application, "psql" for the reset scripts): ./run.sh web prints what the application sent, and the
+    # "under the hood" page shows which SQL each request caused
+    command: ["postgres", "-c", "log_statement=all", "-c", "log_line_prefix=[%a] "]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "pharmacy_database"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  tomcat:
+    image: tomcat:9.0.123-jre17
+    depends_on:
+      db:
+        condition: service_healthy
+    # 8081: 8080 is used by the Http_Servlets and MVC repositories, so all of them can run at the same time
+    ports:
+      - "${TOMCAT_PORT:-8081}:8080"
+    environment:
+      # inside Docker the database is the service "db" on its own port 5432 (application.properties says
+      # localhost:5435 for programs started on your machine); -D values win over the file (PropertiesUtil)
+      CATALINA_OPTS: -Ddb.url=jdbc:postgresql://db:5432/pharmacy_database
+    volumes:
+      # ./mvnw package builds the application unpacked into target/pharmacy/; it is the ROOT application, so it opens
+      # at http://localhost:8081/ (context root "/" as in Eclipse - the code redirects to "/login", "/admin")
+      - ./FinalProject/target/pharmacy:/usr/local/tomcat/webapps/ROOT:ro
+    healthcheck:
+      # the static start page (served by Tomcat's DefaultServlet, open to everybody in AuthorizationFilter)
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "http://localhost:8080/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

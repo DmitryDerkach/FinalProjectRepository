@@ -1,6 +1,7 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
 <%@taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
+<%-- Описание (2026): главная страница администратора (AdminServlet): ссылки на пользователей и лекарства. --%>
 <html>
 <head>
     <title>Admin page</title>

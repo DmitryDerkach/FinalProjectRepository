@@ -1,6 +1,9 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
 <%@taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
+<%-- Описание (2026): корзина (UserMedicineCartServlet): лекарства, количество, стоимость каждого и итог - всё из
+     сессии; кнопки отправляют submitReject=1 (отменить) или 2 (подтвердить) в FinalServlet. Закомментированный
+     блок - первая версия с русскими подписями, до перевода на fmt:message. --%>
 <html>
 <head>
     <title>Cart</title>
@@ -30,8 +33,9 @@
 <form action="${pageContext.request.contextPath}/final-servlet" method="post">
     <c:forEach var="index" begin="0" end="${sessionScope.medicineDtos.size()-1}">
         <h3>
-            ${sessionScope.medicineDtos.get(index).name}
-                (${sessionScope.medicineDtos.get(index).countryOfProduction}) -
+            <%-- fix 2026: c:out - название с тегами выполнялось в браузере (XSS) --%>
+            <c:out value="${sessionScope.medicineDtos.get(index).name}"/>
+                (<c:out value="${sessionScope.medicineDtos.get(index).countryOfProduction}"/>) -
                     ${sessionScope.medicineDtos.get(index).price}$:
                         ${sessionScope.quantity[index]} <fmt:message key="medicines.items" />.
                 <br>

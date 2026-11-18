@@ -3,9 +3,13 @@ package mapper;
 import dto.MedicineDto;
 import entity.Medicine;
 
+/* Описание (2026): переводит лекарство между слоями: MedicineDto (сервлеты, JSP) <-> Medicine (DAO, база). */
 public class MedicineMapper {
 	private static final MedicineMapper INSTANCE = new MedicineMapper();
 
+	// 2026: пояснение - builder() не бросает исключений, поэтому блок catch не выполняется, medicine остаётся
+	// пустым (name == null) и всегда срабатывает второй if: лекарство собирается из всех полей DTO. Для формы
+	// добавления id = 0, и база сама выдаёт новый id (serial), для удаления id берётся из формы.
 	public Medicine mapFromMedicineDtoToMedicine(MedicineDto object) {
 		Medicine medicine = new Medicine();
 		try {
@@ -16,7 +20,7 @@ public class MedicineMapper {
 					.price(object.getPrice())
 					.countryOfProduction(object.getCountryOfProduction())
 					.build();
-		} 
+		}
 		if (medicine.getName() == null) {
 			medicine = Medicine.builder()
 					 .id(object.getId())
@@ -24,10 +28,10 @@ public class MedicineMapper {
 					 .price(object.getPrice())
 					 .countryOfProduction(object.getCountryOfProduction())
 					 .build();
-		} 
+		}
 		return medicine;
 	}
-	
+
 	public static MedicineMapper getInstance() {
 		return INSTANCE;
 	}
@@ -40,5 +44,5 @@ public class MedicineMapper {
 				.countryOfProduction(medicine.getCountryOfProduction())
 				.build();
 	}
-	
+
 }

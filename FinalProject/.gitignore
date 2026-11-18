@@ -1,1 +1,22 @@
+# Compiled output
+/bin/
 /build/
+/out/
+/target/
+*.class
+*.war
+
+# Eclipse
+.classpath
+.project
+.settings/
+.tern-project
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.log

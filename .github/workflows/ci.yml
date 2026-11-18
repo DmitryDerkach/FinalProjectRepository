@@ -1,0 +1,120 @@
+name: Build, run and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [11, 17, 21]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      # the same commands as on a developer machine (README "How to run")
+      - name: JUnit tests (DAO on PostgreSQL, filters, servlets and JSP on an embedded Tomcat)
+        run: ./run.sh test
+      - name: The pharmacy on Tomcat 9 + PostgreSQL in Docker
+        run: ./run.sh web
+      - name: Check what the application answers
+        # every answer goes into a variable first and is checked there: "producer | grep -q" fails at random under
+        # pipefail - grep exits on the first match, and the producer (curl, docker compose) gets a write error
+        run: |
+          set -euo pipefail
+          url=http://localhost:8081
+          tmp="$(mktemp -d)"
+          fail() { echo "::error::$*"; exit 1; }
+          has() { grep -qF -- "$2" <<< "$1" || fail "expected to find: $2"; }
+          hasnt() { ! grep -qF -- "$2" <<< "$1" || fail "did not expect: $2"; }
+          redirect() { local got; got="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "${@:2}")"; [ "$got" = "302 $url$1" ] || fail "expected a redirect to $1, got: $got (${*:2})"; }
+          has "$(curl -fsS "$url/")" "<h1>Pharmacy</h1>"
+          has "$(curl -fsS -D - -o /dev/null "$url/images/logo.svg" | tr -d '\r')" "Content-Type: image/svg+xml"
+          # the filter: guests go to the login page, customers stay away from the administrator pages
+          redirect /login "$url/user-medicines"
+          redirect /login "$url/admin-medicines"
+          redirect /user-medicines -c "$tmp/anna" -d eMail=anna@example.com -d password=anna "$url/login"
+          redirect /user-medicines -b "$tmp/anna" "$url/admin-users"
+          redirect /user-medicines -b "$tmp/anna" -d id=1 "$url/admin-medicines"
+          redirect /admin -c "$tmp/admin" -d eMail=admin@example.com -d password=admin "$url/login"
+          has "$(curl -fsS -b "$tmp/admin" "$url/admin-medicines")" "Aspirin (Germany) - 5$"
+          # the cart: 3 x Ibuprofen (7$) + 2 x Validol (4$)
+          cart="$(curl -fsS -b "$tmp/anna" -d medicineId=2 -d medicineId=6 \
+            -d rowId=1 -d quantity=0 -d rowId=2 -d quantity=3 -d rowId=3 -d quantity=0 \
+            -d rowId=4 -d quantity=0 -d rowId=5 -d quantity=0 -d rowId=6 -d quantity=2 "$url/user-cart")"
+          has "$cart" "Total price: 29$"
+          redirect /user-medicines -b "$tmp/anna" -d submitReject=1 "$url/final-servlet"
+          has "$(curl -fsS -b "$tmp/anna" "$url/user-medicines")" "Purchase was rejected."
+          # wrong forms are messages, not server errors
+          redirect /user-medicines -b "$tmp/anna" -d medicineId=2 -d rowId=2 -d quantity=abc "$url/user-cart"
+          has "$(curl -fsS -b "$tmp/anna" "$url/user-medicines")" "entered incorrectly"
+          has "$(curl -fsS -d userName= -d eMail=anna@example.com -d password=x "$url/registration")" "Enter your name."
+          # registration with a Cyrillic name (from a file), then the administrator sees it, tags as text
+          printf '%s' 'Мария Тестова' > "$tmp/name.txt"
+          redirect '/login?registered' --data-urlencode "userName@$tmp/name.txt" -d eMail=ci@example.com -d password=ci "$url/registration"
+          redirect '/login?registered' --data-urlencode 'userName=<i id=xss>X</i>' -d eMail=xss@example.com -d password=x "$url/registration"
+          users="$(curl -fsS -b "$tmp/admin" "$url/admin-users")"
+          has "$users" "Мария Тестова - [ci@example.com] - USER"
+          hasnt "$users" "<i id=xss>"
+          # the language lives in the session
+          redirect /admin-users -b "$tmp/admin" -H "Referer: $url/admin-users" -d lang=ru_RU "$url/locale"
+          has "$(curl -fsS -b "$tmp/admin" "$url/admin-users")" "Список пользователей из базы данных:"
+          has "$(docker compose logs db)" 'insert into users'
+          echo "all answers are as expected"
+      - name: The console Runner (all steps, then one)
+        run: |
+          ./run.sh runner
+          out="$(./run.sh runner findMedicine)"
+          grep -qF 'Medicine(id=2, name=Ibuprofen, price=7, countryOfProduction=USA)' <<< "$out"
+          grep -qF 'medicine 25: not found' <<< "$out"
+      - name: Stop
+        if: always()
+        run: ./run.sh stop
+
+  pages:
+    name: Publish the "under the hood" page
+    needs: run
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      # the page shows real bytes, SQL and generated code: record them from this commit's code on every deploy
+      - name: Record real requests, responses, SQL and the servlet generated from a JSP
+        run: |
+          ./run.sh web
+          python3 site/capture.py
+          ./run.sh stop
+      - name: Build the site
+        run: |
+          mkdir _site
+          cp site/index.html site/captures.js _site/
+          cp FinalProject/WebContent/images/logo.svg _site/
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v5

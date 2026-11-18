@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 
+/* Описание (2026): сущность "пользователь" - одна строка таблицы users (email уникален, роль - Role). */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

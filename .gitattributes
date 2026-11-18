@@ -1,0 +1,6 @@
+# 2026: shell scripts and SQL must keep LF (Linux, macOS, Codespaces, the PostgreSQL container); Windows scripts keep CRLF
+*.sh text eol=lf
+*.sql text eol=lf
+mvnw text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

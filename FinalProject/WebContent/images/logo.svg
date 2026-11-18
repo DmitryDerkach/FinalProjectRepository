@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 240" width="640" height="240" role="img" aria-label="Pharmacy - online drugstore">
+  <!-- 2026: drawn for this repository instead of a logo of another company that was linked from twitter.com.
+       A nod to the 2021 joke (an umbrella over a pharmacy), with a pharmacy cross instead of a trademark. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b3d2e"/>
+      <stop offset="1" stop-color="#03140f"/>
+    </linearGradient>
+    <linearGradient id="canopy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="240" rx="18" fill="url(#bg)"/>
+  <!-- the umbrella: a canopy with a scalloped edge, ribs, the shaft and the handle -->
+  <path d="M30 132 A92 92 0 0 1 214 132 Q191 116 168 132 Q145 116 122 132 Q99 116 76 132 Q53 116 30 132 Z" fill="url(#canopy)"/>
+  <g stroke="#047857" stroke-width="3" fill="none" stroke-linecap="round">
+    <path d="M122 40 Q90 70 76 132"/>
+    <path d="M122 40 Q154 70 168 132"/>
+  </g>
+  <g stroke="#e2e8f0" stroke-width="7" fill="none" stroke-linecap="round">
+    <path d="M122 132 L122 196 Q122 214 106 214 Q93 214 92 202"/>
+  </g>
+  <!-- the pharmacy cross -->
+  <g fill="#ffffff">
+    <rect x="115" y="62" width="14" height="46" rx="3"/>
+    <rect x="99" y="78" width="46" height="14" rx="3"/>
+  </g>
+  <text x="246" y="122" fill="#ffffff" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="900" letter-spacing="3">PHARMACY</text>
+  <text x="249" y="160" fill="#a7f3d0" font-family="'Helvetica Neue', Arial, sans-serif" font-size="20" letter-spacing="1">online drugstore · dmdev · 2021</text>
+</svg>

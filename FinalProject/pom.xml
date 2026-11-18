@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Added in 2026: in 2021 this was an Eclipse Dynamic Web Project deployed to Tomcat 8.5 from the IDE, with the
+         libraries copied by hand into WebContent/WEB-INF/lib (lombok.jar, postgresql-42.2.18.jar, jstl-1.2.jar).
+         Maven now downloads them and builds the same web application from the same folders. -->
+    <groupId>io.github.dmitryderkach</groupId>
+    <artifactId>pharmacy</artifactId>
+    <version>1.0</version>
+    <packaging>war</packaging>
+    <name>FinalProject - dmdev final project: an online pharmacy on servlets, filters and JSP</name>
+
+    <properties>
+        <maven.compiler.release>11</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <tomcat.version>9.0.123</tomcat.version>
+        <lombok.version>1.18.48</lombok.version>
+        <!-- ./mvnw compile exec:java runs the console Runner; -Dexec.args=medicines runs one step -->
+        <exec.mainClass>dao_test_package.Runner</exec.mainClass>
+    </properties>
+
+    <dependencies>
+        <!-- the Servlet API is provided by Tomcat at runtime, so it is not packed into the WAR.
+             Tomcat 9 implements Servlet 4.0 (javax.servlet); Tomcat 10+ renamed the package to jakarta.servlet -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>4.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- JSTL (c:forEach, c:if, fmt:message, fn:escapeXml): the same jstl-1.2.jar that was in WEB-INF/lib -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>jstl</artifactId>
+            <version>1.2</version>
+        </dependency>
+        <!-- the JDBC driver (2021: 42.2.18) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.14</version>
+        </dependency>
+        <!-- Lombok writes getters, constructors, builders at compile time; nothing of it is needed at runtime
+             (in 2021 lombok.jar sat in WEB-INF/lib and was deployed to Tomcat with the application) -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- tests start a real (embedded) Tomcat with this web application, filters and JSP included -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-core</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-jasper</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.14.4</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>pharmacy</finalName>
+        <!-- keep the original Eclipse layout: src/, src/resources/ and WebContent/ -->
+        <sourceDirectory>src</sourceDirectory>
+        <testSourceDirectory>test</testSourceDirectory>
+        <resources>
+            <!-- like the Eclipse deployment assembly: src/resources goes to the root of WEB-INF/classes, so
+                 PropertiesUtil finds application.properties and fmt:setBundle finds translations*.properties -->
+            <resource>
+                <directory>src/resources</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.16.0</version>
+                <configuration>
+                    <!-- named explicitly: JDK 23+ no longer runs annotation processors found on the classpath -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- target/pharmacy.war and the same application unpacked in target/pharmacy/
+                     (docker-compose.yml mounts the unpacked folder into Tomcat) -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <warSourceDirectory>WebContent</warSourceDirectory>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.6.1</version>
+                <configuration>
+                    <!-- the same flags the official Tomcat startup scripts pass on Java 9+ (memory leak protection
+                         when an application stops); without them embedded Tomcat prints warnings in the tests -->
+                    <argLine>--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.4</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

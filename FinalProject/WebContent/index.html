@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+   <!-- 2026: the start page of the demo (did not exist in 2021: "/" answered 404). Tomcat serves it for "/"
+        (welcome-file-list in web.xml); AuthorizationFilter lets everybody see it. -->
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>Pharmacy - dmdev final project</title>
+   <style>
+     :root { --bg: #04211a; --card: #0b3328; --line: #14532d; --text: #e2f5ec; --muted: #9cc7b5; --get: #34d399; --post: #fbbf24; --accent: #6ee7b7; --admin: #f472b6; }
+     * { box-sizing: border-box; }
+     body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+     main { max-width: 980px; margin: 0 auto; padding: 28px 16px 48px; }
+     header.hero { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+     header.hero img { width: 320px; max-width: 100%; height: auto; border-radius: 12px; }
+     header.hero .intro { flex: 1 1 320px; min-width: 0; }
+     h1 { font-size: 36px; margin: 0 0 6px; }
+     h2.lesson { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 10px; }
+     .lead { color: var(--muted); margin: 0 0 8px; line-height: 1.5; }
+     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+     .grid > * { min-width: 0; }
+     .card { background: var(--card); border-radius: 12px; padding: 14px 16px; border: 1px solid var(--line); }
+     .card h3 { font-size: 15px; margin: 0 0 6px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere; }
+     .card p { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 0 0 10px; }
+     .method { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-right: 6px; color: #04211a; }
+     .get { background: var(--get); } .post { background: var(--post); } .admin { background: var(--admin); }
+     a { color: var(--accent); margin-right: 10px; }
+     form { display: inline; }
+     button { background: var(--post); color: #04211a; border: 0; border-radius: 8px; padding: 7px 12px; font-weight: 700; cursor: pointer; margin: 0 6px 6px 0; }
+     button.user { background: var(--get); }
+     code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; color: var(--accent); overflow-wrap: anywhere; }
+     .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 14px; }
+     .chain span { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+     .chain b { color: var(--muted); }
+     footer { color: var(--muted); font-size: 13px; margin-top: 28px; line-height: 1.5; }
+     footer a { margin-right: 0; }
+   </style>
+ </head>
+ <body>
+  <main>
+   <header class="hero">
+     <img src="/images/logo.svg" alt="Pharmacy - online drugstore">
+     <div class="intro">
+       <h1>Pharmacy</h1>
+       <p class="lead">The final project of the dmdev servlets course (November 2021): an online drugstore without frameworks.
+         Every request passes two <b>filters</b> before a servlet: <code>EncodingFilter</code> (UTF-8) and
+         <code>AuthorizationFilter</code> (logged in? which <b>role</b>?). Who you are lives in the <b>session</b>.</p>
+       <div class="chain"><span>browser</span><b>→</b><span>EncodingFilter</span><b>→</b><span>AuthorizationFilter</span><b>→</b><span>servlet</span><b>→</b><span>JSP</span></div>
+     </div>
+   </header>
+
+   <h2 class="lesson">Log in with one click (demo accounts)</h2>
+   <div class="grid">
+     <div class="card">
+       <h3><span class="method post">POST</span>/login</h3>
+       <p>The buttons send the same form as the login page. <code>LoginServlet</code> puts the user into the session and
+         redirects by role.</p>
+       <form action="/login" method="post"><input type="hidden" name="eMail" value="admin@example.com"><input type="hidden" name="password" value="admin"><button type="submit">Administrator</button></form>
+       <form action="/login" method="post"><input type="hidden" name="eMail" value="anna@example.com"><input type="hidden" name="password" value="anna"><button class="user" type="submit">Customer (Anna)</button></form>
+     </div>
+     <div class="card">
+       <h3><span class="method get">GET</span>/login · /registration</h3>
+       <p>The pages themselves: <code>admin@example.com</code> / <code>admin</code>, <code>anna@example.com</code> / <code>anna</code>,
+         or register a new customer.</p>
+       <a href="/login">Login page</a><a href="/registration">Registration</a>
+     </div>
+   </div>
+
+   <h2 class="lesson">Customer: choose, cart, buy</h2>
+   <div class="grid">
+     <div class="card">
+       <h3><span class="method get">GET</span>/user-medicines</h3>
+       <p>Medicines with a checkbox and a quantity. Without a session <code>AuthorizationFilter</code> sends you to <code>/login</code>.</p>
+       <a href="/user-medicines">Open</a>
+     </div>
+     <div class="card">
+       <h3><span class="method post">POST</span>/user-cart → /final-servlet</h3>
+       <p><code>UserMedicineCartServlet</code> counts the prices and keeps the cart in the session; "Submit buying" or
+         "Cancel buying" goes to <code>FinalServlet</code>, which redirects back with a message.</p>
+     </div>
+     <div class="card">
+       <h3><span class="method get">GET</span>/medicines</h3>
+       <p>The first servlet of the project: HTML written by the servlet itself, without JSP.</p>
+       <a href="/medicines">Open</a>
+     </div>
+   </div>
+
+   <h2 class="lesson">Administrator (role ADMIN only)</h2>
+   <div class="grid">
+     <div class="card">
+       <h3><span class="method admin">ADMIN</span>/admin</h3>
+       <p>The administrator's start page. A customer who opens it is redirected to <code>/user-medicines</code>.</p>
+       <a href="/admin">JSP view</a><a href="/admin?view=servlet">HTML from the servlet</a>
+     </div>
+     <div class="card">
+       <h3><span class="method admin">ADMIN</span>/admin-medicines</h3>
+       <p>Add a medicine (POST with <code>medicineAddition</code>) or delete one (POST with its <code>id</code>).</p>
+       <a href="/admin-medicines">Open</a>
+     </div>
+     <div class="card">
+       <h3><span class="method admin">ADMIN</span>/admin-users</h3>
+       <p>Everybody registered, read by <code>UserDao.findAll</code>.</p>
+       <a href="/admin-users">JSP view</a><a href="/admin-users?view=servlet">HTML from the servlet</a>
+     </div>
+   </div>
+
+   <h2 class="lesson">Language and logout</h2>
+   <div class="grid">
+     <div class="card">
+       <h3><span class="method post">POST</span>/locale</h3>
+       <p><code>LocaleServlet</code> stores the language in the session; <code>fmt:message</code> takes the texts from
+         <code>translations_ru_RU.properties</code> or <code>translations.properties</code>.</p>
+       <form action="/locale" method="post"><button type="submit" name="lang" value="ru_RU">Русский</button><button type="submit" name="lang" value="en_US">English</button></form>
+     </div>
+     <div class="card">
+       <h3><span class="method post">POST</span>/logout</h3>
+       <p><code>session.invalidate()</code>: the user, the cart and the language are gone.</p>
+       <form action="/logout" method="post"><button type="submit">Log out</button></form>
+     </div>
+   </div>
+
+   <footer>
+     Authors: <a href="https://github.com/DmitryDerkach/FinalProjectRepository">Dmitry Derkach</a> and
+     <a href="https://github.com/DmitryPoverov">Dmitry Poverov</a> (dmdev course, 2021). Restored and documented in 2026:
+     <a href="https://dmitryderkach.github.io/FinalProjectRepository/">what happens under the hood</a>.
+   </footer>
+  </main>
+ </body>
+</html>

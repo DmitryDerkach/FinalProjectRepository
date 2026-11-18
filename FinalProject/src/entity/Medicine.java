@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/* Описание (2026): сущность "лекарство" - одна строка таблицы medicines (цена в целых долларах).
+ * Геттеры, сеттеры, equals/hashCode/toString, конструкторы и builder() пишет Lombok при компиляции. */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pharmacy under the hood</title>
+<meta name="description" content="Follow real HTTP requests through a pharmacy written on bare servlets: two filters at the door, a session that remembers who you are, roles, a cart and two languages - recorded from this repository's code.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b3d2e'/%3E%3Crect x='13' y='6' width='6' height='20' rx='1.5' fill='%23fff'/%3E%3Crect x='6' y='13' width='20' height='6' rx='1.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F5F3EC;
+    --sheet: #FFFFFF;
+    --ink: #0E2B24;
+    --ink-soft: #4B6159;
+    --rule: #D9D4C5;
+    --green: #0F8A5F;
+    --green-deep: #0B3D2E;
+    --red: #C8323B;
+    --amber: #E3A008;
+    --blue: #2563A8;
+    --violet: #7247A8;
+    --green-wash: #DDF3E8;
+    --red-wash: #FBE3E4;
+    --amber-wash: #FFF1CC;
+    --blue-wash: #E1ECF8;
+    --violet-wash: #EEE7F7;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --display: "Fraunces", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.55 var(--sans); }
+  a { color: var(--green); }
+  :focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+
+  /* the receipt: the one decorative device of the page, used only around HTTP messages (perforated top and bottom) */
+  .receipt { position: relative; background: var(--sheet); padding: 18px 16px; border-left: 1px solid var(--rule); border-right: 1px solid var(--rule);
+    --tooth: radial-gradient(circle at 6px 0, transparent 5px, var(--sheet) 5.5px);
+    -webkit-mask: radial-gradient(circle at 7px 0, transparent 5px, #000 5.5px) top / 14px 51% repeat-x,
+                  radial-gradient(circle at 7px 100%, transparent 5px, #000 5.5px) bottom / 14px 51% repeat-x;
+            mask: radial-gradient(circle at 7px 0, transparent 5px, #000 5.5px) top / 14px 51% repeat-x,
+                  radial-gradient(circle at 7px 100%, transparent 5px, #000 5.5px) bottom / 14px 51% repeat-x; }
+  .sqlbox { background: var(--green-deep); color: #E3F3EC; border-radius: 6px; padding: 14px 16px; }
+
+  /* hero */
+  header.hero { padding: 44px 0 34px; }
+  .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 40px; align-items: center; }
+  h1 { font: 800 clamp(34px, 5.2vw, 60px)/1.02 var(--display); letter-spacing: -0.015em; margin: 0 0 18px; }
+  h1 em { font-style: normal; color: var(--green); }
+  .hero p { font-size: 19px; color: var(--ink-soft); max-width: 34em; margin: 0 0 14px; }
+  .hero .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .btn { display: inline-block; font: 600 16px var(--sans); text-decoration: none; padding: 10px 16px; border-radius: 6px;
+    border: 2px solid var(--ink); color: var(--ink); background: transparent; cursor: pointer; }
+  .btn.primary { background: var(--ink); color: var(--sheet); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .hero-stack { display: grid; gap: 14px; }
+  .hero-stack img { width: 100%; max-width: 520px; height: auto; border-radius: 12px; display: block; }
+  .chain-strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font: 600 13px var(--mono); }
+  .chain-strip span { padding: 4px 8px; border-radius: 4px; }
+  .chain-strip .arrow { padding: 0; color: var(--ink-soft); }
+  .stamp { position: absolute; top: 10px; right: 14px; transform: rotate(5deg); border: 2px solid var(--red); color: var(--red);
+    font: 600 12px var(--mono); padding: 3px 8px; border-radius: 4px; background: var(--sheet); letter-spacing: .04em; }
+
+  /* raw HTTP text */
+  .wire { font: 14px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .wire .crlf { color: #A9B4AE; font-size: 11px; margin-left: 2px; user-select: none; }
+  .wire .seg { border-radius: 3px; transition: background-color .25s, box-shadow .25s; }
+  .wire .start { font-weight: 600; }
+  .wire .hname { color: var(--blue); }
+  .wire .blank { display: inline-block; min-width: 3ch; }
+  .wire .status-2 { color: var(--green); } .wire .status-3 { color: var(--violet); } .wire .status-4, .wire .status-5 { color: var(--red); }
+  .wire .on { background: var(--amber-wash); box-shadow: 0 0 0 3px var(--amber-wash); }
+  .wire .blank.on { background: var(--amber); box-shadow: 0 0 0 3px var(--amber); }
+  .sql { font: 13.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 0; color: #E3F3EC; }
+  .sql .kw { color: #FFD166; }
+  .sql .param { color: #9BE3C0; }
+  .sql.on { box-shadow: 0 0 0 3px var(--amber); border-radius: 3px; }
+  .muted { color: #A9B4AE; font-style: italic; }
+
+  section { padding: 44px 0; border-top: 1px solid var(--rule); }
+  h2 { font: 800 clamp(26px, 3.4vw, 38px)/1.1 var(--display); margin: 0 0 10px; }
+  h3 { margin: 0 0 6px; }
+  .lede { color: var(--ink-soft); max-width: 52em; margin: 0 0 26px; }
+
+  /* journey */
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .picker button { font: 600 13.5px var(--mono); padding: 7px 11px; border-radius: 6px; border: 1.5px solid var(--rule);
+    background: var(--sheet); color: var(--ink); cursor: pointer; }
+  .picker button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--sheet); }
+  .picker .group { width: 100%; font-size: 14px; color: var(--ink-soft); margin: 6px 0 -2px; }
+
+  .journey { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 28px; align-items: start; }
+  ol.stages { list-style: none; margin: 0; padding: 0; counter-reset: stage; position: relative; }
+  ol.stages::before { content: ""; position: absolute; left: 15px; top: 10px; bottom: 10px; width: 3px; background: var(--rule); }
+  ol.stages li { position: relative; padding: 0 0 12px 46px; counter-increment: stage; }
+  ol.stages li::before { content: counter(stage); position: absolute; left: 0; top: 0; width: 33px; height: 33px; border-radius: 50%;
+    display: grid; place-items: center; font: 600 14px var(--mono); background: var(--sheet); border: 3px solid var(--rule); color: var(--ink-soft); }
+  ol.stages li button { all: unset; cursor: pointer; display: block; border-radius: 4px; }
+  ol.stages li .who { font: 600 12.5px var(--mono); }
+  ol.stages li .what { font-weight: 600; line-height: 1.3; }
+  ol.stages li.skip .what, ol.stages li.skip .who { opacity: .45; text-decoration: line-through; }
+  ol.stages li.done::before { border-color: var(--green); color: var(--green); }
+  ol.stages li.current::before { background: var(--green); border-color: var(--green); color: var(--sheet); }
+  ol.stages li.current .what { color: var(--green); }
+  ol.stages li.stop::before { background: var(--red); border-color: var(--red); color: var(--sheet); }
+  ol.stages li.stop.current .what { color: var(--red); }
+  .layer-tomcat { color: var(--blue); } .layer-filter { color: var(--red); } .layer-controller { color: var(--green); }
+  .layer-model { color: #946200; } .layer-db { color: var(--violet); } .layer-view { color: #B4446C; }
+
+  .explain { background: var(--sheet); border-left: 5px solid var(--green); border-radius: 0 6px 6px 0; padding: 14px 18px; margin-bottom: 18px; min-height: 112px; }
+  .explain.stop { border-left-color: var(--red); }
+  .explain h3 { font-size: 19px; }
+  .explain p { margin: 0; color: var(--ink-soft); }
+  .hero code, .explain code, .lede code, td code, .card code, .msg-title code, li code, p code { font: 14px var(--mono); color: var(--ink); background: var(--green-wash); padding: 1px 5px; border-radius: 3px; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .controls .hint { font-size: 14px; color: var(--ink-soft); }
+  .messages { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+  .messages .full { grid-column: 1 / -1; }
+  .msg-title { font: 600 14px var(--mono); margin: 0 0 8px; color: var(--ink-soft); }
+  .msg-title b { color: var(--ink); }
+  .scroll { max-height: 380px; overflow: auto; }
+
+  /* the filter chain */
+  .chain { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 8px 0 26px; }
+  .chain .box { background: var(--sheet); border: 2px solid var(--ink); border-radius: 8px; padding: 12px 12px; margin: 0 10px; position: relative; }
+  .chain .box h3 { font: 600 14px var(--mono); margin: 0 0 6px; overflow-wrap: anywhere; }
+  .chain .box p { margin: 0; font-size: 14.5px; color: var(--ink-soft); line-height: 1.4; }
+  .chain .box:not(:last-child)::after { content: "doFilter →"; position: absolute; right: -24px; top: 50%; transform: translate(50%, -50%) rotate(-90deg);
+    font: 600 11px var(--mono); color: var(--ink-soft); white-space: nowrap; }
+  .chain .tomcat { border-color: var(--blue); } .chain .enc { border-color: var(--amber); } .chain .auth { border-color: var(--red); }
+  .chain .servlet { border-color: var(--green); } .chain .jsp { border-color: #B4446C; }
+  .exits { display: flex; flex-wrap: wrap; gap: 10px; margin: -10px 0 24px; font-size: 15px; }
+  .exits span { background: var(--red-wash); border-radius: 6px; padding: 6px 10px; }
+
+  /* cards */
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .card { background: var(--sheet); border-radius: 6px; padding: 16px 18px; border-top: 6px solid var(--green); }
+  .card.red { border-top-color: var(--red); } .card.violet { border-top-color: var(--violet); } .card.blue { border-top-color: var(--blue); }
+  .card p { margin: 0 0 8px; color: var(--ink-soft); font-size: 16px; }
+  .card .wire { font-size: 12.5px; background: var(--paper); padding: 8px 10px; border-radius: 4px; }
+
+  .code { font: 13px/1.55 var(--mono); background: var(--green-deep); color: #E3F3EC; border-radius: 6px; padding: 14px 16px; overflow: auto; margin: 0; white-space: pre; max-height: 560px; }
+  .code .c { color: #8FB5A6; } .code .s { color: #9BE3C0; } .code .k { color: #FFD166; } .code .gap { color: #6E9585; }
+  .code .y26 { background: rgba(255, 209, 102, .16); display: inline-block; min-width: 100%; }
+  .legend { font-size: 14px; color: var(--ink-soft); margin: 8px 0 0; }
+  .legend i { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; background: rgba(255, 209, 102, .45); border-radius: 3px; margin-right: 4px; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+  /* grid items may shrink below their content (long code lines scroll inside .code instead of widening the page) */
+  .two > *, .hero-grid > *, .hero-stack > *, .journey > *, .messages > *, .cards > *, .chain > * { min-width: 0; }
+  p code, li code, td code, footer a { overflow-wrap: anywhere; }
+
+  /* comparison table */
+  table { width: 100%; border-collapse: collapse; background: var(--sheet); border-radius: 6px; overflow: hidden; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 15px; background: var(--green-wash); }
+  td:first-child { font-weight: 600; width: 18%; }
+
+  footer { padding: 30px 0 48px; color: var(--ink-soft); font-size: 15px; border-top: 1px solid var(--rule); }
+
+  @media (max-width: 960px) {
+    .hero-grid, .journey, .messages, .two, .cards { grid-template-columns: minmax(0, 1fr); }
+    ol.stages { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+    ol.stages::before { display: none; }
+    .chain { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+    .chain .box:not(:last-child)::after { right: 50%; top: auto; bottom: -22px; transform: translateX(50%); }
+  }
+  @media (max-width: 700px) {
+    table, tbody, tr, td { display: block; width: 100%; }
+    thead { display: none; }
+    tr { border-bottom: 2px solid var(--rule); padding: 6px 0; }
+    td { border: 0; padding: 4px 14px; }
+    td:first-child { width: 100%; font-size: 18px; }
+    td:nth-child(2)::before { content: "This repository: "; font-weight: 600; color: var(--green); }
+    td:nth-child(3)::before { content: "Spring: "; font-weight: 600; color: var(--blue); }
+    td code { word-break: break-word; }
+  }
+  @media (prefers-reduced-motion: reduce) { .wire .seg { transition: none; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <h1>Two filters at the door, <em>a session</em> behind it</h1>
+      <p>An online pharmacy on bare servlets &mdash; the final project of a 2021 course. Before any servlet runs, every request passes
+        <code>EncodingFilter</code> (UTF-8) and <code>AuthorizationFilter</code> (who are you, and may you come in?). Who you are is kept in the
+        <b>session</b>; what you see depends on your <b>role</b> and your <b>language</b>.</p>
+      <p>This is what Spring Security, <code>CharacterEncodingFilter</code> and <code>LocaleResolver</code> do for you. Every request, response and SQL statement here
+        is real: <span id="provenance">recorded from this repository's code</span>.</p>
+      <div class="links">
+        <a class="btn primary" href="#journey">Follow a request</a>
+        <a class="btn" href="https://github.com/DmitryDerkach/FinalProjectRepository">Source code</a>
+        <a class="btn" href="https://codespaces.new/DmitryDerkach/FinalProjectRepository?quickstart=1">Run it in Codespaces</a>
+      </div>
+    </div>
+    <div class="hero-stack">
+      <img src="logo.svg" alt="Pharmacy - online drugstore" width="640" height="240">
+      <div class="chain-strip" aria-label="The way of a request">
+        <span style="background:var(--blue-wash)">Tomcat</span><span class="arrow">&rarr;</span>
+        <span style="background:var(--amber-wash)">EncodingFilter</span><span class="arrow">&rarr;</span>
+        <span style="background:var(--red-wash)">AuthorizationFilter</span><span class="arrow">&rarr;</span>
+        <span style="background:var(--green-wash)">Servlet</span><span class="arrow">&rarr;</span>
+        <span style="background:var(--violet-wash)">SQL</span><span class="arrow">&rarr;</span>
+        <span style="background:#F6E3EA">JSP</span>
+      </div>
+      <div class="receipt" aria-label="A real request of a customer to an administrator page, and the answer">
+        <span class="stamp">NO ENTRY</span>
+        <pre class="wire" id="hero-wire"></pre>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="journey">
+  <div class="wrap">
+    <h2>The journey, stage by stage</h2>
+    <p class="lede">Pick a request, then step through it. Each stage is a class of this repository (or of Tomcat); the highlighted bytes and
+      SQL are what that stage reads or writes. A red stage ends the journey early; crossed-out stages are not reached.</p>
+    <div class="picker" id="picker" role="group" aria-label="Choose a recorded request"></div>
+    <div class="journey">
+      <ol class="stages" id="stages"></ol>
+      <div>
+        <div class="explain" id="explain" aria-live="polite"><h3 id="stage-title"></h3><p id="stage-text"></p></div>
+        <div class="controls">
+          <button class="btn" id="prev" type="button">Previous stage</button>
+          <button class="btn primary" id="next" type="button">Next stage</button>
+          <span class="hint" id="handler"></span>
+        </div>
+        <div class="messages">
+          <div>
+            <p class="msg-title"><b>Request</b> sent by the browser</p>
+            <div class="receipt"><div class="scroll"><pre class="wire" id="req"></pre></div></div>
+          </div>
+          <div>
+            <p class="msg-title"><b>Response</b> written back</p>
+            <div class="receipt"><div class="scroll"><pre class="wire" id="resp"></pre></div></div>
+          </div>
+          <div class="full">
+            <p class="msg-title"><b>SQL</b> that PostgreSQL received while this request was handled (<code>log_statement=all</code>)</p>
+            <div class="sqlbox"><pre class="sql" id="sql"></pre></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>The filter chain</h2>
+    <p class="lede">Both filters are mapped to <code>/*</code> with <code>@WebFilter</code>, so Tomcat puts them in front of every servlet, JSP and static file.
+      For one request it builds an <code>ApplicationFilterChain</code>: the filters, then the servlet. Each filter decides whether to call
+      <code>chain.doFilter(request, response)</code> &mdash; pass the request on &mdash; or to answer itself and stop.</p>
+    <div class="chain">
+      <div class="box tomcat"><h3>Tomcat</h3><p>Parses the bytes, finds the servlet for the URL, builds the chain.</p></div>
+      <div class="box enc"><h3>EncodingFilter</h3><p><code>setCharacterEncoding("UTF-8")</code> on the request and the response, then always <code>doFilter</code>.</p></div>
+      <div class="box auth"><h3>AuthorizationFilter</h3><p>Open page? A user in the session? An <code>/admin</code> page and role ADMIN? Only then <code>doFilter</code>.</p></div>
+      <div class="box servlet"><h3>Servlet</h3><p><code>doGet</code> / <code>doPost</code>: services, DAO, SQL.</p></div>
+      <div class="box jsp"><h3>JSP</h3><p>After <code>forward</code>: the HTML, in the language of the session.</p></div>
+    </div>
+    <div class="exits"><span><b>no user</b> &rarr; <code>sendRedirect("/login")</code></span><span><b>USER on /admin&hellip;</b> &rarr; <code>sendRedirect("/user-medicines")</code></span></div>
+    <div class="two">
+      <div>
+        <p class="msg-title"><b>filter/AuthorizationFilter.java</b> &mdash; <code>doFilter</code></p>
+        <pre class="code" id="filter-code"></pre>
+        <p class="legend"><i></i>added in 2026: the role check, the open start page and logo, the redirect without the broken <code>referer</code>. The rest is the code of 2021.</p>
+      </div>
+      <div>
+        <p class="msg-title"><b>The same rules in Spring Security</b> (for comparison, not in this repository)</p>
+        <pre class="code" id="spring-code"></pre>
+        <p class="legend">Spring Security is itself a servlet filter (<code>DelegatingFilterProxy</code> &rarr; <code>SecurityFilterChain</code>) in front of
+          Spring's <code>DispatcherServlet</code> &mdash; the same place as <code>AuthorizationFilter</code> here.</p>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:22px">The order of two filters declared only with annotations is not fixed by the Servlet specification. Here it doesn't matter:
+      <code>AuthorizationFilter</code> reads no parameters, so the encoding is set before any servlet reads the form. To fix an order, list the filters
+      in <code>web.xml</code> (or use <code>@Order</code> / <code>FilterRegistrationBean</code> in Spring Boot).</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Who are you? The session</h2>
+    <p class="lede">HTTP forgets everything between two requests. Tomcat gives every browser a cookie <code>JSESSIONID</code> &mdash; only a key; the data
+      (<code>user</code>, the cart, the language) stays in the server's memory under that key. Logging in means putting a <code>UserDto</code> there.</p>
+    <div class="cards">
+      <div class="card blue"><h3>1. The first request</h3><p>The filter calls <code>getSession()</code>: Tomcat creates a session &mdash; still without a user &mdash; and sends its id, even with the redirect to <code>/login</code>.</p><pre class="wire" id="s1"></pre></div>
+      <div class="card"><h3>2. A successful login</h3><p><code>changeSessionId()</code>, then <code>setAttribute("user", ...)</code>: the browser gets a <b>new</b> id. An id known before the login (session fixation) is useless after it.</p><pre class="wire" id="s2"></pre></div>
+      <div class="card red"><h3>3. After the logout</h3><p><code>invalidate()</code> threw the session away. The browser still sends the old id, Tomcat doesn't know it: a new, empty session, and the filter sends it to <code>/login</code>.</p><pre class="wire" id="s3"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>A JSP is a servlet &mdash; and it speaks two languages</h2>
+    <p class="lede">The browser never gets <code>login.jsp</code>. On the first request Tomcat's JSP engine (Jasper) turns it into a Java class, compiles it and runs
+      it like any servlet. <code>&lt;%@ include file="header.jsp"%&gt;</code> pastes the header into the page before that, so the generated class also sets
+      the language: <code>&lt;fmt:setLocale&gt;</code> takes it from the session, <code>&lt;fmt:message key="..."/&gt;</code> looks the text up in
+      <code>translations.properties</code> or <code>translations_ru_RU.properties</code>.</p>
+    <div class="two">
+      <div>
+        <p class="msg-title"><b>header.jsp + login.jsp</b> (what was written in 2021, shortened)</p>
+        <pre class="code" id="jsp-src"></pre>
+      </div>
+      <div>
+        <p class="msg-title"><b>login_jsp.java</b> (what Tomcat generated and runs) &mdash; <span id="jsp-lines"></span></p>
+        <pre class="code" id="jsp-java"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>This is Spring, written by hand</h2>
+    <p class="lede">Every piece of this pharmacy has a Spring counterpart. Spring does not replace the ideas &mdash; filters, the session, bundles of texts &mdash; it writes the repetitive parts for you.</p>
+    <table>
+      <thead><tr><th></th><th>This repository (2021)</th><th>Spring MVC / Spring Boot / Spring Security</th></tr></thead>
+      <tbody>
+        <tr><td>Encoding</td><td><code>EncodingFilter</code>: <code>setCharacterEncoding("UTF-8")</code> for every request</td><td><code>CharacterEncodingFilter</code>, registered by Spring Boot automatically</td></tr>
+        <tr><td>Who may enter</td><td><code>AuthorizationFilter</code>: a set of open paths, <code>sendRedirect("/login")</code></td><td><code>SecurityFilterChain</code>: <code>permitAll()</code>, <code>authenticated()</code>, <code>formLogin()</code></td></tr>
+        <tr><td>Roles</td><td><code>uri.startsWith("/admin") &amp;&amp; role != ADMIN</code> (2026)</td><td><code>.requestMatchers("/admin/**").hasRole("ADMIN")</code> or <code>@PreAuthorize</code></td></tr>
+        <tr><td>Login</td><td><code>LoginServlet</code>: <code>UserDao.findByEmailAndPassword</code>, the user into the session</td><td><code>UsernamePasswordAuthenticationFilter</code> + <code>UserDetailsService</code> + <code>PasswordEncoder</code> (hashes, not plain text)</td></tr>
+        <tr><td>The logged-in user</td><td><code>session.getAttribute("user")</code></td><td><code>SecurityContextHolder</code>, kept in the same <code>HttpSession</code>; <code>@AuthenticationPrincipal</code></td></tr>
+        <tr><td>Logout</td><td><code>session.invalidate()</code>, redirect</td><td><code>.logout()</code> &mdash; <code>LogoutFilter</code></td></tr>
+        <tr><td>Session fixation</td><td><code>req.changeSessionId()</code> after the login (2026)</td><td>Done by default (<code>sessionFixation().changeSessionId()</code>)</td></tr>
+        <tr><td>Language</td><td><code>LocaleServlet</code> &rarr; <code>sessionScope.lang</code> &rarr; <code>&lt;fmt:setLocale&gt;</code></td><td><code>SessionLocaleResolver</code> + <code>LocaleChangeInterceptor</code> (<code>?lang=ru</code>)</td></tr>
+        <tr><td>Texts</td><td><code>&lt;fmt:message key&gt;</code>, <code>translations*.properties</code></td><td><code>MessageSource</code>, <code>messages*.properties</code>, <code>#{key}</code> in Thymeleaf</td></tr>
+        <tr><td>Form errors</td><td><code>ValidationException</code> with keys of texts (2026)</td><td><code>@Valid</code> + <code>BindingResult</code>, messages from <code>MessageSource</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p id="footer-provenance"></p>
+    <p>dmdev course, final project, November 2021, by Dmitry Derkach and Dmitry Poverov; cleaned up in 2026. Source, tests and the one-command run:
+      <a href="https://github.com/DmitryDerkach/FinalProjectRepository">github.com/DmitryDerkach/FinalProjectRepository</a>.</p>
+  </div>
+</footer>
+
+<script src="captures.js"></script>
+<script>
+(() => {
+  const data = window.CAPTURES;
+  const $ = (id) => document.getElementById(id);
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  // ---- stages: "req"/"resp" name the parts of the HTTP message a stage touches ("h:cookie" = one header), "sql" lights the SQL ----
+  const LAYERS = {
+    connector: { who: "Tomcat connector", layer: "tomcat", what: "Accept the connection, parse the bytes", req: ["start", "header", "blank"] },
+    mapper:    { who: "Tomcat mapper", layer: "tomcat", what: "Find the servlet, build the filter chain", req: ["start"] },
+    encoding:  { who: "EncodingFilter", layer: "filter", what: "UTF-8 for the request and the response", req: ["body"] },
+    auth:      { who: "AuthorizationFilter", layer: "filter", what: "Open page? Logged in? Right role?", req: ["start", "h:cookie"] },
+    controller:{ who: "Servlet", layer: "controller", what: "Read the request, decide", req: ["start", "body"] },
+    service:   { who: "Service", layer: "model", what: "Business logic, DTOs" },
+    dao:       { who: "DAO + JDBC", layer: "db", what: "SQL to PostgreSQL", sql: true },
+    view:      { who: "JSP (after forward)", layer: "view", what: "Write the HTML", resp: ["body"] },
+    response:  { who: "Tomcat", layer: "tomcat", what: "Status line and headers", resp: ["start", "header", "blank"] },
+  };
+  const ORDER = ["connector", "mapper", "encoding", "auth", "controller", "service", "dao", "view", "response"];
+  const ENC = "<code>request.setCharacterEncoding(\"UTF-8\")</code> and the same for the response, then <code>chain.doFilter</code>. Nothing else.";
+  const PUBLIC = (path) => `<code>${path}</code> is open: it starts with one of <code>/login</code>, <code>/registration</code>, <code>/locale</code> &rarr; <code>chain.doFilter</code>.`;
+  const LOGGED = (role) => `<code>getSession().getAttribute("user")</code> finds the <code>UserDto</code> of the session that the cookie <code>JSESSIONID</code> points to &rarr; ${role}`;
+
+  // per request: an explanation for each stage; null = not reached; "stop" = the stage that answers and ends the chain
+  const NOTES = {
+    "start": {
+      mapper: "No servlet is mapped to <code>/</code>, so Tomcat's <code>DefaultServlet</code> (static files) gets it, and <code>/</code> becomes <code>index.html</code> (<code>welcome-file-list</code> in <code>web.xml</code>). Both filters are mapped to <code>/*</code> &mdash; they run even for a static file.",
+      encoding: ENC,
+      auth: "<code>/</code> is in <code>START_PAGE</code> (2026; an exact match &mdash; with <code>startsWith</code> every path would be open, since every path starts with <code>/</code>) &rarr; <code>chain.doFilter</code>, no session needed.",
+      controller: null, service: null, dao: null,
+      view: "No JSP: <code>DefaultServlet</code> copies the file <code>index.html</code> as it is.",
+      response: "<b>200</b>. <code>ETag</code> and <code>Last-Modified</code> come from the file: next time a browser may ask \"changed?\" and get a short 304.",
+    },
+    "guest-blocked": {
+      mapper: "<code>@WebServlet(\"/user-medicines\")</code> &rarr; <code>UserMedicineServlet</code>; the chain is the two filters, then this servlet.",
+      encoding: ENC,
+      auth: "Not an open page, and no <code>Cookie</code> header: <code>getSession()</code> in <code>isUserLoggedIn</code> creates a new, empty session, <code>getAttribute(\"user\")</code> is <code>null</code> &rarr; <code>sendRedirect(\"/login\")</code>. <code>chain.doFilter</code> is never called.",
+      stop: "auth",
+      controller: null, service: null, dao: null, view: null,
+      response: "<b>302</b> and <code>Location: /login</code> &mdash; plus <code>Set-Cookie: JSESSIONID</code> of the empty session the filter's <code>getSession()</code> created. The servlet never ran, and the database never heard of this request.",
+    },
+    "login-form": {
+      mapper: "<code>@WebServlet(\"/login\")</code> &rarr; <code>LoginServlet</code>.",
+      encoding: ENC,
+      auth: PUBLIC("/login"),
+      controller: "<code>doGet</code>: <code>forward</code> to <code>/WEB-INF/jsp/login.jsp</code> (a browser can't open anything under <code>WEB-INF</code> itself).",
+      service: null, dao: null,
+      view: "<code>header.jsp</code> is pasted in: <code>&lt;fmt:setLocale&gt;</code> finds no language in the session &rarr; <code>en_US</code>; <code>&lt;fmt:setBundle basename=\"translations\"&gt;</code>. Then the form, every label a <code>&lt;fmt:message&gt;</code>.",
+      response: "No <code>Set-Cookie</code>: the browser already has a session, from the redirect before (a JSP takes part in the session by default, so for a browser without one this page would create it). <code>Content-Language: en-US</code> &mdash; <code>&lt;fmt:setLocale&gt;</code> also sets the language of the response.",
+    },
+    "login-wrong": {
+      mapper: "<code>LoginServlet</code> again; this time <code>doPost</code>.",
+      encoding: ENC + " The body <code>eMail=...&amp;password=...</code> is decoded as UTF-8 when the servlet asks for a parameter.",
+      auth: PUBLIC("/login"),
+      controller: "<code>userService.login(req.getParameter(\"eMail\"), req.getParameter(\"password\"))</code> returns <code>Optional.empty()</code> &rarr; <code>onLoginFail</code>.",
+      service: "<code>UserService.login</code>: <code>UserDao.findByEmailAndPassword</code>, then <code>User</code> &rarr; <code>UserDto</code> with <code>UserMapper</code> &mdash; if found.",
+      dao: "One <code>select</code> with both values as parameters (<code>$1</code>, <code>$2</code>): the database compares the password. It is stored as plain text &mdash; fine for a course, never for a real shop (Spring: <code>PasswordEncoder</code>).",
+      view: null,
+      response: "<b>302</b> to <code>/login?error&amp;email=anna%40example.com</code>: the email is URL-encoded, and <code>login.jsp</code> writes it back into the field. 2021 read the parameter <code>email</code> while the form sends <code>eMail</code>: the address always said <code>email=null</code>.",
+    },
+    "login-user": {
+      mapper: "<code>LoginServlet.doPost</code>.",
+      encoding: ENC,
+      auth: PUBLIC("/login"),
+      controller: "Found &rarr; <code>onLoginSuccess</code>: <code>req.changeSessionId()</code> (2026) &mdash; the same session with a new id; <code>setAttribute(\"user\", userDto)</code>; the role is <code>USER</code> &rarr; <code>sendRedirect(\"/user-medicines\")</code>.",
+      service: "<code>UserService.login</code> &rarr; <code>Optional&lt;UserDto&gt;</code>.",
+      dao: "The same <code>select</code>, this time it returns a row.",
+      view: null,
+      response: "Compare the cookies: the request sent the id from the login page, the answer sets a <b>new</b> <code>JSESSIONID</code>. <code>Location: /user-medicines</code>.",
+    },
+    "login-admin": {
+      mapper: "<code>LoginServlet.doPost</code>.",
+      encoding: ENC,
+      auth: PUBLIC("/login"),
+      controller: "The role is <code>ADMIN</code> &rarr; <code>sendRedirect(\"/admin\")</code>. This browser came without a cookie: <code>getSession()</code> creates the session, <code>changeSessionId()</code> renames it.",
+      service: "<code>UserService.login</code>.",
+      dao: "The same <code>select</code> with the administrator's email and password.",
+      view: null,
+      response: "<code>Set-Cookie</code> with the session of the administrator and <code>Location: /admin</code>.",
+    },
+    "user-on-admin": {
+      mapper: "<code>@WebServlet(\"/admin-medicines\")</code> &rarr; <code>AdminMedicineServlet</code>.",
+      encoding: ENC,
+      auth: LOGGED("logged in. But the path starts with <code>/admin</code> and the role is <code>USER</code> &rarr; <code>sendRedirect(\"/user-medicines\")</code>. In 2021 the filter checked only \"logged in?\", so this request opened the page &mdash; and a POST here deleted medicines."),
+      stop: "auth",
+      controller: null, service: null, dao: null, view: null,
+      response: "<b>302</b> to the customer's own page. No SQL: the servlet that would read and change the stock never ran.",
+    },
+    "admin-medicines": {
+      mapper: "<code>AdminMedicineServlet</code>.",
+      encoding: ENC,
+      auth: LOGGED("role <code>ADMIN</code> &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>doGet</code>: removes the result of the last action from the session (2021 showed it again on every visit), puts the list into the session as <code>medicines</code>, <code>forward</code>.",
+      service: "<code>MedicineService.findAll()</code>: each <code>Medicine</code> becomes a <code>MedicineDto</code>.",
+      dao: "<code>select * from medicines order by id</code> (2021: table <code>medecines</code>, no <code>order by</code>).",
+      view: "<code>admin-medicines.jsp</code>: the form \"add\" and one small form per medicine with a hidden <code>id</code> and a button \"Delete\". Names go through <code>&lt;c:out&gt;</code>.",
+      response: "<b>200</b>, the page.",
+    },
+    "medicines": {
+      mapper: "<code>@WebServlet(\"/user-medicines\")</code>.",
+      encoding: ENC,
+      auth: LOGGED("a customer; the path is not an <code>/admin</code> one &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>doGet</code>: the medicines into the session, <code>forward</code> to <code>user-medicines.jsp</code>.",
+      service: "<code>MedicineService.findAll()</code>.",
+      dao: "One <code>select</code>.",
+      view: "Per medicine: a checkbox <code>medicineId</code>, a hidden <code>rowId</code> (2026) and a number field <code>quantity</code>. The form goes to <code>/user-cart</code>.",
+      response: "<b>200</b>.",
+    },
+    "cart": {
+      mapper: "<code>@WebServlet(\"/user-cart\")</code> &rarr; <code>UserMedicineCartServlet.doPost</code>.",
+      encoding: ENC,
+      auth: LOGGED("a customer &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>getParameterValues</code>: <code>medicineId</code> = [2, 6], <code>rowId</code> = [1&hellip;6], <code>quantity</code> = [0, 3, 0, 0, 0, 2]. The quantity of a checked medicine is taken from its own row (2021 paired them by order among the non-zero fields). Then price &times; quantity, the total, and the cart into the session.",
+      service: "<code>MedicineService.findById</code> per checked id &rarr; <code>Optional&lt;MedicineDto&gt;</code>.",
+      dao: "Two <code>select ... where id = ?</code>: the prices come from the database, not from the form.",
+      view: "<code>user-medicine-cart.jsp</code>: <code>&lt;c:forEach begin=\"0\" end=\"${size - 1}\"&gt;</code> over the indexes of the lists in the session; two buttons with <code>name=\"submitReject\"</code>.",
+      response: "<b>200</b>: 3 &times; 7$ + 2 &times; 4$ = 29$.",
+    },
+    "buy": {
+      mapper: "<code>@WebServlet(\"/final-servlet\")</code>.",
+      encoding: ENC,
+      auth: LOGGED("a customer &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>submitReject=2</code>: the session attribute <code>request</code> = \"Покупка была совершена!\" (the JSP compares this text), a fresh list, the cart is removed from the session (2026), <code>sendRedirect</code>. Nothing is saved &mdash; the project has no table of orders.",
+      service: "<code>MedicineService.findAll()</code> for the list.",
+      dao: "One <code>select</code>.",
+      view: null,
+      response: "<b>302</b> &mdash; Post/Redirect/Get: reloading the next page repeats a GET, not the purchase.",
+    },
+    "after-buy": {
+      mapper: "<code>UserMedicineServlet</code>.",
+      encoding: ENC,
+      auth: LOGGED("&rarr; <code>chain.doFilter</code>."),
+      controller: "The usual list.",
+      service: "<code>MedicineService.findAll()</code>.",
+      dao: "One <code>select</code>.",
+      view: "<code>&lt;c:if test=\"${sessionScope.request.equals('Покупка была совершена!')}\"&gt;</code> shows <code>&lt;fmt:message key=\"message.purchase\"/&gt;</code>, and <code>${sessionScope.remove('request')}</code> takes the message out of the session: reload, and it is gone.",
+      response: "<b>200</b>.",
+    },
+    "cart-wrong": {
+      mapper: "<code>UserMedicineCartServlet.doPost</code>.",
+      encoding: ENC,
+      auth: LOGGED("&rarr; <code>chain.doFilter</code>."),
+      controller: "Ibuprofen (row 2) is checked but its quantity is 0; the 5 is in row 6 (Validol) without a checkbox &rarr; <code>quantityError</code> in the session, redirect back. 2021 sold 5 &times; Ibuprofen here; nothing checked was a <code>NullPointerException</code>, \"abc\" a <code>NumberFormatException</code>.",
+      service: null, dao: null, view: null,
+      response: "<b>302</b> to <code>/user-medicines</code>, which shows the error once. (2021 redirected to a hard-coded <code>http://localhost:8080/...</code> &mdash; another application on any other port.)",
+    },
+    "add": {
+      mapper: "<code>AdminMedicineServlet.doPost</code>.",
+      encoding: "The body is <code>name=%D0%9A%D0%BE...</code>: UTF-8 bytes, percent-encoded. Without <code>setCharacterEncoding(\"UTF-8\")</code> Tomcat would decode them as ISO-8859-1 and save <code>ÐÐ¾ÑÐ²Ð°Ð»Ð¾Ð»</code>. The filter does it once, for the whole site, before any servlet calls <code>getParameter</code>.",
+      auth: LOGGED("role <code>ADMIN</code> &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>medicineAddition</code> is present &rarr; add. Name and country not blank, the price a whole number 0&hellip;1000000 (2026) &rarr; <code>medicineService.save</code>; the result <code>\"Saved\"</code> into the session; <code>forward</code> back to the page.",
+      service: "<code>MedicineService.save</code>: <code>MedicineDto</code> &rarr; <code>Medicine</code> (<code>MedicineMapper</code>), <code>MedicineDao.save</code>.",
+      dao: "<code>insert</code> &mdash; PostgreSQL returns the new <code>id</code> (<code>RETURN_GENERATED_KEYS</code>) &mdash; then the list again.",
+      view: "<code>\"Saved\"</code> becomes <code>&lt;fmt:message key=\"message.medicine.saved\"/&gt;</code> (2021: the English string in any language). The new medicine is at the end of the list.",
+      response: "<b>200</b>: a forward, not a redirect, as in 2021 &mdash; reloading this page would send the form again.",
+    },
+    "add-wrong": {
+      mapper: "<code>AdminMedicineServlet.doPost</code>.",
+      encoding: ENC,
+      auth: LOGGED("role <code>ADMIN</code> &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>Integer.valueOf(\"abc\")</code> fails &rarr; the result <code>\"Invalid medicine\"</code>. 2021: <code>Integer.parseInt</code> threw <code>NumberFormatException</code> &mdash; a 500 with a stack trace. (The browser stops this with <code>type=\"number\"</code>, but any client can send any text.)",
+      service: "Only <code>findAll</code> for the list: nothing is saved.",
+      dao: "One <code>select</code>, no <code>insert</code>.",
+      view: "<code>&lt;fmt:message key=\"error.medicine\"/&gt;</code> in red.",
+      response: "<b>200</b> with the form.",
+    },
+    "register-wrong": {
+      mapper: "<code>@WebServlet(\"/registration\")</code> &rarr; <code>RegistrationServlet.doPost</code>.",
+      encoding: ENC,
+      auth: PUBLIC("/registration"),
+      controller: "A <code>UserDto</code> from the form with the role <code>USER</code>. <code>UserService.create</code> throws <code>ValidationException</code>; the servlet puts its error keys into the request and calls <code>doGet</code> &mdash; the form again.",
+      service: "<code>validate</code> (2026): the fields are fine, but <code>UserDao.findByEmail</code> finds Anna &rarr; <code>error.email.taken</code>. 2021 sent it to the database, and the <code>unique</code> constraint answered with a 500.",
+      dao: "<code>select * from users where email = ?</code> &mdash; and no <code>insert</code>.",
+      view: "<code>&lt;c:forEach var=\"error\" items=\"${requestScope.errors}\"&gt;&lt;fmt:message key=\"${error}\"/&gt;</code>: the keys become texts in the language of the session. The typed values stay in the fields (<code>fn:escapeXml</code>).",
+      response: "<b>200</b>: nothing was saved, so no redirect.",
+    },
+    "register": {
+      mapper: "<code>RegistrationServlet.doPost</code>.",
+      encoding: ENC + " The Cyrillic name arrives intact.",
+      auth: PUBLIC("/registration"),
+      controller: "<code>userService.create(userDto)</code> succeeds &rarr; <code>sendRedirect(\"/login?registered\")</code>.",
+      service: "<code>validate</code> passes, the email is free; <code>UserMapper.mapFrom</code> &rarr; <code>User</code> &rarr; <code>UserDao.save</code>.",
+      dao: "The email check, then the <code>insert</code>.",
+      view: null,
+      response: "<b>302</b> to <code>/login?registered</code>: the login page says \"Registration is complete\".",
+    },
+    "locale": {
+      mapper: "<code>@WebServlet(\"/locale\")</code> &rarr; <code>LocaleServlet.doPost</code>.",
+      encoding: ENC,
+      auth: PUBLIC("/locale"),
+      controller: "<code>lang=ru_RU</code> into the session (anything else becomes <code>en_US</code>; the 2021 button sent <code>en_EN</code>, a language that doesn't exist). Back to the page from the <code>Referer</code> header &mdash; only its path, so it can't lead to another site.",
+      service: null, dao: null, view: null,
+      response: "<b>302</b> to <code>/admin-users</code>, unchanged. 2021 appended <code>?lang=...</code> on every click: <code>/login?lang=ru_RU?lang=en_EN</code>.",
+    },
+    "users-ru": {
+      mapper: "<code>@WebServlet(\"/admin-users\")</code>.",
+      encoding: ENC,
+      auth: LOGGED("role <code>ADMIN</code> &rarr; <code>chain.doFilter</code>."),
+      controller: "<code>userService.findAll()</code> into the request attribute <code>users</code>, <code>forward</code>.",
+      service: "<code>User</code> &rarr; <code>UserDto</code>.",
+      dao: "<code>select * from users order by id</code>.",
+      view: "<code>&lt;fmt:setLocale value=\"${sessionScope.lang}\"&gt;</code> is now <code>ru_RU</code>, so every <code>&lt;fmt:message&gt;</code> reads <code>translations_ru_RU.properties</code>. Names typed by users go through <code>&lt;c:out&gt;</code> (2021 printed them raw: a name with <code>&lt;script&gt;</code> ran in the administrator's browser).",
+      response: "<code>Content-Language: ru-RU</code>.",
+    },
+    "logout": {
+      mapper: "<code>@WebServlet(\"/logout\")</code>.",
+      encoding: ENC,
+      auth: LOGGED("&rarr; <code>chain.doFilter</code>."),
+      controller: "<code>req.getSession().invalidate()</code>: the user, the language and everything else of this session are gone. <code>sendRedirect(\"/login\")</code>.",
+      service: null, dao: null, view: null,
+      response: "<b>302</b> to <code>/login</code>.",
+    },
+    "after-logout": {
+      mapper: "<code>AdminServlet</code>.",
+      encoding: ENC,
+      auth: "The browser still sends the old <code>JSESSIONID</code>, but the session is gone: <code>getSession()</code> creates a new, empty one &rarr; no user &rarr; <code>sendRedirect(\"/login\")</code>.",
+      stop: "auth",
+      controller: null, service: null, dao: null, view: null,
+      response: "<b>302</b> to <code>/login</code> and a <code>Set-Cookie</code> with the id of the new session.",
+    },
+  };
+  const CONNECTOR = "Tomcat reads the start line, the headers up to the empty line and the body, and builds an <code>HttpServletRequest</code> and an empty <code>HttpServletResponse</code>.";
+
+  // ---- rendering an HTTP message with visible CRLFs and named parts ----
+  const CRLF = '<span class="crlf" aria-hidden="true">␍␊</span>';
+  function render(text, isResponse) {
+    const split = text.indexOf("\r\n\r\n");
+    const head = split >= 0 ? text.slice(0, split) : text;
+    const body = split >= 0 ? text.slice(split + 4) : "";
+    const lines = head.split("\r\n");
+    let html = "";
+    const first = lines.shift();
+    let cls = "seg start";
+    if (isResponse) { const code = (first.split(" ")[1] || ""); cls += " status-" + code.charAt(0); }
+    html += `<span class="${cls}" data-part="start">${esc(first)}</span>${CRLF}\n`;
+    for (const line of lines) {
+      const i = line.indexOf(":");
+      const name = line.slice(0, i).toLowerCase();
+      html += `<span class="seg" data-part="header" data-name="${esc(name)}"><span class="hname">${esc(line.slice(0, i + 1))}</span>${esc(line.slice(i + 1))}</span>${CRLF}\n`;
+    }
+    html += `<span class="seg blank" data-part="blank" title="the empty line: headers end here">${CRLF}</span>\n`;
+    if (body) html += `<span class="seg" data-part="body">${esc(body).replace(/\r\n/g, CRLF + "\n")}</span>`;
+    return html;
+  }
+  const SQL_KW = /\b(select|from|where|order by|insert into|values|update|set|delete)\b/gi;
+  function renderSql(lines) {
+    if (!lines.length) return '<span class="muted">(no SQL: this request does not reach the database)</span>';
+    return lines.map(l => l.startsWith("  -- parameters")
+      ? `<span class="param">${esc(l)}</span>`
+      : esc(l).replace(SQL_KW, m => `<span class="kw">${m}</span>`)).join("\n");
+  }
+
+  // ---- state ----
+  const byId = (id) => data.scenarios.find(s => s.id === id);
+  let scenario = byId("user-on-admin") || data.scenarios[0];
+  let stage = 0;
+
+  function stagesFor(s) {
+    const notes = NOTES[s.id] || {};
+    return ORDER.map(key => {
+      const base = LAYERS[key];
+      const text = key === "connector" ? CONNECTOR : notes[key];
+      return { ...base, key, stop: notes.stop === key, skip: text === null || text === undefined, text: text || "Not reached for this request." };
+    });
+  }
+
+  function highlight(el, parts) {
+    parts = parts || [];
+    el.querySelectorAll(".seg").forEach(seg => {
+      const on = parts.includes(seg.dataset.part) || (seg.dataset.name && parts.includes("h:" + seg.dataset.name));
+      seg.classList.toggle("on", on);
+    });
+    const firstOn = el.querySelector(".seg.on");
+    const box = el.closest(".scroll");
+    if (firstOn && box) box.scrollTop = Math.max(0, firstOn.offsetTop - box.offsetTop - 12);
+  }
+
+  function show() {
+    const list = stagesFor(scenario);
+    const st = list[stage];
+    $("stages").innerHTML = list.map((x, i) =>
+      `<li class="${x.skip ? "skip " : ""}${x.stop ? "stop " : ""}${i < stage ? "done" : i === stage ? "current" : ""}"><button type="button" data-stage="${i}" aria-current="${i === stage ? "step" : "false"}">` +
+      `<div class="who layer-${x.layer}">${esc(x.who)}</div><div class="what">${esc(x.what)}</div></button></li>`).join("");
+    $("stage-title").textContent = `${stage + 1}. ${st.who}: ${st.what}`;
+    $("stage-text").innerHTML = st.text;
+    $("explain").classList.toggle("stop", st.stop);
+    $("handler").textContent = `Handled by: ${scenario.handler}`;
+    // a filter that answers itself writes the status line and Location of the response
+    const respParts = st.stop ? ["start", "h:location", "h:set-cookie"] : st.resp;
+    highlight($("req"), st.skip ? [] : st.req);
+    highlight($("resp"), st.skip ? [] : respParts);
+    $("sql").classList.toggle("on", !!st.sql && !st.skip);
+    $("prev").disabled = stage === 0;
+    $("next").disabled = stage === list.length - 1;
+  }
+
+  function choose(s) {
+    scenario = s; stage = 0;
+    $("req").innerHTML = render(s.request, false);
+    $("resp").innerHTML = render(s.response, true);
+    $("sql").innerHTML = renderSql(s.sql);
+    document.querySelectorAll("#picker button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.id === s.id)));
+    show();
+  }
+
+  const GROUPS = { door: "The door: what the filters let through", login: "Logging in: the session gets a user",
+                   roles: "Roles: the same URL, two users", shop: "The customer: list, cart, purchase",
+                   admin: "The administrator: Cyrillic in a form", register: "Registration: errors in the language of the page",
+                   lang: "Language and logout" };
+  const label = (s) => {
+    const line = s.request.split("\r\n")[0].split(" ");
+    const extra = { "guest-blocked": " (guest)", "login-wrong": " (wrong)", "login-user": " (Anna)", "login-admin": " (admin)",
+      "user-on-admin": " (Anna)", "admin-medicines": " (admin)", "after-buy": " (message)", "cart-wrong": " (wrong row)",
+      "add-wrong": " (abc)", "register-wrong": " (taken)", "users-ru": " (ru)", "after-logout": " (old cookie)" }[s.id] || "";
+    return `${line[0]} ${line[1]}${extra}`;
+  };
+  $("picker").innerHTML = Object.entries(GROUPS).map(([g, title]) =>
+    `<span class="group">${esc(title)}</span>` + data.scenarios.filter(s => s.group === g)
+      .map(s => `<button type="button" data-id="${s.id}" title="${esc(s.title)}">${esc(label(s))}</button>`).join("")).join("");
+  $("picker").addEventListener("click", e => {
+    const b = e.target.closest("button[data-id]");
+    if (b) choose(byId(b.dataset.id));
+  });
+  $("stages").addEventListener("click", e => {
+    const b = e.target.closest("button[data-stage]");
+    if (b) { stage = Number(b.dataset.stage); show(); }
+  });
+  $("prev").addEventListener("click", () => { if (stage > 0) { stage--; show(); } });
+  $("next").addEventListener("click", () => { if (stage < ORDER.length - 1) { stage++; show(); } });
+
+  const headOf = (s, keep) => s.response.split("\r\n\r\n")[0].split("\r\n").filter((l, i) => i === 0 || keep.test(l)).join("\r\n");
+  const reqHead = (s, keep) => s.request.split("\r\n\r\n")[0].split("\r\n").filter((l, i) => i === 0 || keep.test(l)).join("\r\n");
+
+  // hero: the customer at the administrator's door
+  const hero = byId("user-on-admin");
+  if (hero) $("hero-wire").textContent = reqHead(hero, /^Cookie/i) + "\n\n" + headOf(hero, /^Location/i);
+
+  // the session cards
+  const fill = (id, text) => { $(id).textContent = text; };
+  if (byId("guest-blocked")) fill("s1", reqHead(byId("guest-blocked"), /^Cookie/i) + "\n\n" + headOf(byId("guest-blocked"), /^(Set-Cookie|Location)/i));
+  if (byId("login-user")) fill("s2", reqHead(byId("login-user"), /^Cookie/i) + "\n\n" + headOf(byId("login-user"), /^(Set-Cookie|Location)/i));
+  if (byId("after-logout")) fill("s3", reqHead(byId("after-logout"), /^Cookie/i) + "\n\n" + headOf(byId("after-logout"), /^(Set-Cookie|Location)/i));
+
+  // one pass over a line: comments, string literals and keywords (a second pass would also match inside the inserted tags)
+  const TOKEN = /(\/\/.*$)|("(?:[^"\\]|\\.)*")|\b(public|private|final|class|extends|implements|return|if|else|while|do|new|boolean|void|var|throws|static)\b/g;
+  const highlightJava = (line) => {
+    let out = "", at = 0;
+    line.replace(TOKEN, (m, comment, str, kw, pos) => {
+      out += esc(line.slice(at, pos)) + (comment ? `<span class="c">${esc(comment)}</span>` : str ? `<span class="s">${esc(str)}</span>` : `<span class="k">${kw}</span>`);
+      at = pos + m.length;
+      return m;
+    });
+    return out + esc(line.slice(at));
+  };
+  // "+" at the start of a line = added in 2026
+  const FILTER = [
+    "@WebFilter(\"/*\")",
+    "public class AuthorizationFilter implements Filter {",
+    "    private static final Set<String> PUBLIC_PATH = Set.of(\"/login\", \"/registration\", \"/locale\");",
+    "+    private static final Set<String> START_PAGE = Set.of(\"/\", \"/index.html\");",
+    "+    private static final String IMAGES = \"/images/\";",
+    "+    private static final String ADMIN_PATH = \"/admin\";",
+    "",
+    "    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) ... {",
+    "        var uri = ((HttpServletRequest) request).getRequestURI();",
+    "        if (isPublicPath(uri) || isUserLoggedIn(request)) {",
+    "+            if (uri.startsWith(ADMIN_PATH) && !isAdmin(request)) {",
+    "+                ((HttpServletResponse) response).sendRedirect(\"/user-medicines\");",
+    "+                return;",
+    "+            }",
+    "            chain.doFilter(request, response);   // pass the request on",
+    "        } else {",
+    "            // 2021: var prevPage = ((HttpServletResponse) response).getHeader(\"referer\"); - always null",
+    "+            ((HttpServletResponse) response).sendRedirect(\"/login\");",
+    "        }",
+    "    }",
+    "",
+    "    private boolean isUserLoggedIn(ServletRequest servletRequest) {",
+    "        var user = (UserDto) ((HttpServletRequest) servletRequest).getSession().getAttribute(\"user\");",
+    "        return user != null;",
+    "    }",
+    "}"];
+  $("filter-code").innerHTML = FILTER.map(l => l.startsWith("+")
+    ? `<span class="y26">${highlightJava(l.slice(1))}</span>` : highlightJava(l)).join("\n");
+  const SPRING = [
+    "@Bean",
+    "SecurityFilterChain security(HttpSecurity http) throws Exception {",
+    "    return http",
+    "        .authorizeHttpRequests(auth -> auth",
+    "            .requestMatchers(\"/\", \"/index.html\", \"/images/**\",",
+    "                             \"/login\", \"/registration\", \"/locale\").permitAll()",
+    "            .requestMatchers(\"/admin/**\").hasRole(\"ADMIN\")",
+    "            .anyRequest().authenticated())",
+    "        .formLogin(form -> form.loginPage(\"/login\"))   // the login servlet",
+    "        .logout(logout -> logout.logoutSuccessUrl(\"/login\"))",
+    "        .build();",
+    "}",
+    "",
+    "// plus a UserDetailsService (the DAO) and a PasswordEncoder:",
+    "// passwords are compared as hashes, never stored as text"];
+  $("spring-code").innerHTML = SPRING.map(highlightJava).join("\n");
+
+  // a JSP is a servlet: the source as written, and the essential lines of the generated class
+  const JSP = [
+    "<%-- header.jsp, pasted into login.jsp by <%@ include file=\"header.jsp\"%> --%>",
+    "<fmt:setLocale value=\"${sessionScope.lang != null ? sessionScope.lang : (param.lang != null ? param.lang : 'en_US')}\"/>",
+    "<fmt:setBundle basename=\"translations\"/>",
+    "<c:if test=\"${not empty sessionScope.user}\"> ... Logout ... </c:if>",
+    "",
+    "<%-- login.jsp --%>",
+    "<form action=\"${pageContext.request.contextPath}/login\" method=\"post\">",
+    "    <label for=\"emailId\"><fmt:message key=\"user.email\" />",
+    "        <input type=\"text\" name=\"eMail\" id=\"emailId\">",
+    "    </label>",
+    "    ...",
+    "    <c:if test=\"${param.error != null}\">",
+    "        <span><fmt:message key=\"error\" /></span>",
+    "    </c:if>",
+    "</form>",
+    "",
+    "# translations.properties          # translations_ru_RU.properties",
+    "user.email=Email                   user.email=Эл.почта"];
+  $("jsp-src").textContent = JSP.join("\n");
+  const java = (data.jsp_java || "").split("\n");
+  // the lines that show the idea; the rest is Jasper's plumbing. Jasper numbers the fmt:message methods in the order of
+  // the page, so the one of <fmt:message key="user.email"/> is found by its setKey line
+  const keyLine = java.find(l => /_jspx_th_fmt_005fmessage_005f\d+\.setKey\("user\.email"\)/.test(l)) || "";
+  const n = (keyLine.match(/message_005f(\d+)\.setKey/) || [])[1] || "x";
+  const KEEP = [/^public final class /, /public void _jspService/, /response\.setContentType/, /session = pageContext\.getSession\(\)/,
+    /if \(_jspx_meth_fmt_005fsetLocale_005f0\(/, /if \(_jspx_meth_fmt_005fsetBundle_005f0\(/,
+    /SetLocaleTag _jspx_th_fmt_005fsetLocale_005f0 =/, /_jspx_th_fmt_005fsetLocale_005f0\.setValue\(/,
+    /SetBundleTag _jspx_th_fmt_005fsetBundle_005f0 =/, /\.setBasename\(/,
+    /^      out\.write\("<form action/, /out\.write\("    <label for=\\"emailId\\">"\)/,
+    new RegExp(`if \\(_jspx_meth_fmt_005fmessage_005f${n}\\(_jspx_page_context\\)\\)`),
+    new RegExp(`private boolean _jspx_meth_fmt_005fmessage_005f${n}\\(`),
+    new RegExp(`MessageTag _jspx_th_fmt_005fmessage_005f${n} =`), new RegExp(`_jspx_th_fmt_005fmessage_005f${n}\\.setKey\\(`),
+    new RegExp(`= _jspx_th_fmt_005fmessage_005f${n}\\.doStartTag\\(\\)`)];
+  let shown = [], last = -2;
+  java.forEach((line, i) => {
+    if (KEEP.some(re => re.test(line))) {
+      if (i > last + 1 && shown.length) shown.push('<span class="gap">        // …</span>');
+      shown.push(highlightJava(line.replace(/\s+$/, "").replace(/^ {6,}/, m => m.slice(0, 6))));
+      last = i;
+    }
+  });
+  $("jsp-java").innerHTML = shown.length ? shown.join("\n") : '<span class="muted">(not recorded)</span>';
+  $("jsp-lines").textContent = java.length > 1 ? `${java.length} lines, ${shown.filter(l => !l.includes("gap")).length} of them shown` : "";
+
+  const where = `recorded in ${data.where} on ${data.captured_at}` + (data.commit ? `, commit ${data.commit}` : "");
+  $("provenance").textContent = where + " with site/capture.py";
+  $("footer-provenance").textContent = `All requests, responses and SQL on this page were ${where}: Tomcat 9.0.123 and PostgreSQL 18 ran the code of this repository, site/capture.py sent the requests over a plain socket and read the SQL from PostgreSQL's log (log_statement=all).`;
+
+  choose(scenario);
+})();
+</script>
+</body>
+</html>

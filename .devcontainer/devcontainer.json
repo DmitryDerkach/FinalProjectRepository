@@ -1,0 +1,23 @@
+// 2026: GitHub Codespaces / Dev Containers - run the project in the browser without installing anything.
+// "Open in GitHub Codespaces" in README.md creates a cloud machine with JDK 17 and Docker, runs ./run.sh web
+// (PostgreSQL + Tomcat 9 with the pharmacy) and opens port 8081. In the terminal: ./run.sh runner, ./run.sh test.
+{
+  "name": "FinalProjectRepository - pharmacy (JDK 17 + Docker)",
+  // mcr.microsoft.com/devcontainers/java:1-17-bookworm without its broken Yarn apt repository (see Dockerfile)
+  "build": { "dockerfile": "Dockerfile" },
+  "features": {
+    // docker compose inside the codespace, for the PostgreSQL and Tomcat containers of ./run.sh web
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [8081, 5435],
+  "portsAttributes": {
+    "8081": { "label": "Tomcat 9 (the pharmacy)", "onAutoForward": "openBrowser" },
+    "5435": { "label": "PostgreSQL (pharmacy_database, postgres/postgres)", "onAutoForward": "silent" }
+  },
+  // every time the codespace starts: build the application, start PostgreSQL and Tomcat, walk through the shop
+  "postStartCommand": "./run.sh web",
+  "customizations": {
+    "codespaces": { "openFiles": ["README.md"] },
+    "vscode": { "extensions": ["vscjava.vscode-java-pack"] }
+  }
+}
